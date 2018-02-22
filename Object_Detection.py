@@ -225,28 +225,51 @@ def predict(sess, image_file, heat_map):
 
     return out_scores, out_boxes, out_classes, image, heatMap
 
-def preprocess_video(frame):
+
+def preprocess_video(frame,yolo_type):
     #b, g, r = cv2.split(frame)  # get b,g,r
     #rgb_img = cv2.merge([r, g, b])  # switch it to rgb
     image = Image.fromarray(frame.astype('uint8'), 'RGB')
-    resized_Frame = cv2.resize(frame, (608, 608), interpolation=cv2.INTER_AREA)
-    #resized_Frame = cv2.resize(frame, (416, 416), interpolation=cv2.INTER_AREA)
+    if yolo_type == "regular":
+        resized_Frame = cv2.resize(frame, (608, 608), interpolation=cv2.INTER_AREA)
+    else:
+        resized_Frame = cv2.resize(frame, (416, 416), interpolation=cv2.INTER_AREA)
     data = np.array([np.array(resized_Frame)/255.])
     return image, data
 
 if __name__ == '__main__':
     sess = K.get_session()
+#########################Change setting here#####################################################
+    fps = 5
+    yolo_type = "regular"
+    #yolo_type = "tiny"
+    is_Video = True
+    fileName = "storeCounter720"
+    is_Capture = False
+    is_ShowModSum = False
+##################################################################################################
+
 
     class_names = read_classes("./model_data/coco_classes.txt")
-    anchors = read_anchors("./model_data/yolo_anchors.txt")
-    yolo_model = load_model("./model_data/yolo.h5",compile=False)
-    #anchors = read_anchors("./model_data/tiny-yolo_anchors.txt")
-    #yolo_model = load_model("./model_data/tiny-yolo.h5",compile=False)
+    if yolo_type == "regular":
+        anchors = read_anchors("./model_data/yolo_anchors.txt")
+        yolo_model = load_model("./model_data/yolo.h5",compile=False)
+    else:
+        anchors = read_anchors("./model_data/tiny-yolo_anchors.txt")
+        yolo_model = load_model("./model_data/tiny-yolo.h5",compile=False)
 
-    #yolo_model.summary()
-    fps = 5
+    if is_ShowModSum:
+        yolo_model.summary()
+
     frame_Count = 0
-    cap = cv2.VideoCapture("./Data/VIRAT_S_000102.mp4")
+    if is_Video:
+        cap = cv2.VideoCapture("./Data/"+fileName+".mp4")
+    else:
+        cap = cv2.VideoCapture(0)
+    if is_Capture :
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        detection_Output_heat = cv2.VideoWriter('./out/detection_Output_heat.avi', fourcc, 20.0, (960, 540))
+        detection_Output = cv2.VideoWriter('./out/detection_Output.avi', fourcc, 20.0, (960, 540))
     heat_map = None
     if (cap.isOpened()):
         ret, frame = cap.read()
@@ -255,20 +278,30 @@ if __name__ == '__main__':
         image = Image.fromarray(rgb_img.astype('uint8'), 'RGB')
         image_shape = (float(image.size[1]), float(image.size[0]))
         yolo_outputs = yolo_head(yolo_model.output, anchors, len(class_names))
-        scores, boxes, classes = yolo_eval(yolo_outputs, image_shape, max_boxes=20, score_threshold=.1,iou_threshold=.5)
+        scores, boxes, classes = yolo_eval(yolo_outputs, image_shape, max_boxes=20, score_threshold=.3,iou_threshold=.5)
         i = 0
         while (True):
             ret, frame = cap.read()
-            input_Image = preprocess_video(frame)
+            input_Image = preprocess_video(frame,yolo_type)
             if( frame_Count%fps == 0 ):
                 out_scores, out_boxes, out_classes, output_image, heat_map = predict(sess, input_Image, heat_map)
-            heat_map_show = cv2.resize(np.asarray(heat_map), (960, 540))
-            cv2.imshow('Heat Map', heat_map_show)
-            output_image = cv2.resize(np.asarray(output_image), (960, 540))
-            cv2.imshow('CCTV2', output_image)
+            if is_Video:
+                heat_map_show = cv2.resize(np.asarray(heat_map), (960, 540))
+                cv2.imshow('Heat Map', heat_map_show)
+                output_image = cv2.resize(np.asarray(output_image), (960, 540))
+                cv2.imshow('CCTV', output_image)
+                if is_Capture:
+                    detection_Output_heat.write(heat_map_show)
+                    detection_Output.write(output_image)
+            else:
+                cv2.imshow('Heat Map', np.asarray(heat_map))
+                cv2.imshow('CCTV', np.asarray(output_image))
             frame_Count += 1
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     cap.release()
+    if is_Capture:
+        detection_Output_heat.release()
+        detection_Output.release()
     cv2.destroyAllWindows()
